@@ -1,0 +1,10 @@
+name: imprdgm
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - jupyterlab
+  - matplotlib
+  - numpy
+  - pandas
+  - scipy
