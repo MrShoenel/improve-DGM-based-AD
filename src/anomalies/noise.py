@@ -118,7 +118,7 @@ class Perlin_generator_JAX:
             alpha = jrand.uniform(key=self.key_alpha, shape=(1,)).item()
             if alpha > 2. / 3.:
                 perlin_thr = perlin_thr_1 + perlin_thr_2
-                perlin_thr = jnp.where(perlin_thr > 0, jnp.ones_like(perlin_thr), np.zeros_like(perlin_thr))
+                perlin_thr = jnp.where(perlin_thr > 0, jnp.ones_like(perlin_thr), jnp.zeros_like(perlin_thr))
             elif alpha > 1. / 3.:
                 perlin_thr = perlin_thr_1 * perlin_thr_2
             else:
@@ -144,11 +144,13 @@ class Perlin_generator_JAX:
     @staticmethod
     def save_chw_from_float(arr: jnp.ndarray, path: str) -> Image.Image:
         assert arr.dtype == jnp.float32 and jnp.all(arr <= 1.0)
-        if len(arr.shape) == 3: # When saving masks, there is no channel dimension (len(shape)==2).
+        ls = len(arr.shape)
+        if ls == 3: # When saving masks, there is no channel dimension (len(shape)==2).
             assert arr.shape[0] == 3
-            arr = np.swapaxes(arr, *Perlin_generator_JAX.SWAP_TO_PIL)
+            arr = jnp.swapaxes(arr, *Perlin_generator_JAX.SWAP_TO_PIL)
         
-        img = Image.fromarray(np.uint8(arr * 255.))
+        mode = 'L' if ls == 2 else 'RGB'
+        img = Image.frombytes(data=(arr * 255.).astype(jnp.uint8).tobytes(), mode=mode, size=arr.shape[0:2])
         img.save(path)
         return img
     
