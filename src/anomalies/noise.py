@@ -1,17 +1,14 @@
 from os import environ
 environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform' # https://jax.readthedocs.io/en/latest/gpu_memory_allocation.html
 
-import math, torch, random
-import numpy as np
+
+import math, torch
 import jax.numpy as jnp
 import jax.random as jrand
 import flax.linen as nn
 from jax._src.basearray import ArrayLike
 from typing import Callable
 from PIL import Image
-
-
-
 
 
 
@@ -38,8 +35,6 @@ class Perlin_generator_JAX:
         Also creates an initial key for JAX.
         """
         self.seed = seed
-        random.seed(seed)
-        np.random.seed(seed)
         self._key_threshold, self._key_perlin2d, self._key_alpha = jrand.split(key=jrand.PRNGKey(seed), num=3)
 
         torch.use_deterministic_algorithms(mode=True)
