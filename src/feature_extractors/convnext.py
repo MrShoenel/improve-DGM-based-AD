@@ -1,8 +1,9 @@
 import torch
+import numpy as np
 from PIL import Image
 from pathlib import Path
 from .base import FeatureExtractor
-from torch import Tensor, device, cuda, nn
+from torch import Tensor, device, cuda
 from transformers import AutoImageProcessor, ConvNextV2Model
 from transformers.image_processing_base import BatchFeature
 
@@ -23,27 +24,16 @@ class ConvNextV2(FeatureExtractor):
 
         with torch.no_grad():
             for file in images:
-                inputs = self.image_processor(Image.open(fp=file).convert('RGB'), return_tensors='pt').to(self.dev)
+                inputs = np.asarray(Image.open(fp=file).convert('RGB'))
                 features = self.forward(inputs)
                 results.append(features)
-
-                # BaseModelOutputWithPoolingAndNoAttention
-                # temp = self.model(**inputs).last_hidden_state #.cpu().numpy()
-                # if swap_channels_last:
-                #     # Channels First  -->> Channels Last
-                #     # 1 x 2816 x 16 x 16  -->>  1 x 16 x 2816 x 16  -->>  1 x 16 x 16 x 2816
-                #     temp = np.swapaxes(np.swapaxes(temp, 1, 2), 2, 3)
-                # # -->> 1 x 720896
-                # temp = temp.flatten()
-                # results.append(temp)
         
         return torch.vstack(results)
     
-    def forward(self, x: Tensor|BatchFeature) -> Tensor:
-        if isinstance(x, Tensor):
-            return self.model(x).last_hidden_state
-        elif isinstance(x, BatchFeature):
-            return self.model(**x).last_hidden_state
+    def forward(self, x: np.ndarray|Tensor|BatchFeature) -> Tensor:
+        if isinstance(x, np.ndarray):
+            x = Tensor(x).to(device=self.dev)
         
-        raise Exception(f'The type of x ({type(x)}) is not supported.')
+        preproc = self.image_processor(x, return_tensors='pt').to(self.dev)
+        return self.model(**preproc).last_hidden_state
     

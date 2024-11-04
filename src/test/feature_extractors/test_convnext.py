@@ -5,7 +5,7 @@ from src.feature_extractors.convnext import ConvNextV2
 
 
 def test_ConvNextV2():
-    c = ConvNextV2(in_folder=SRC_DIR.joinpath('./test/anomalies/test_noise'))
+    c = ConvNextV2(in_folder=SRC_DIR.joinpath('./test/anomalies/test_noise')).eval()
 
     result = c.extract()
     del c
