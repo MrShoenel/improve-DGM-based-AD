@@ -5,6 +5,9 @@ dependencies:
   - python=3.12
   - jupyterlab
   - matplotlib
-  - numpy
   - pandas
   - scipy
+  - imgaug
+  - numpy=1.26
+  - pytest
+  - conda-forge::transformers
