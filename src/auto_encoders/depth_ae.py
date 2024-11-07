@@ -6,7 +6,7 @@ A "depth-wise" feature extractor for ConvNeXt V2. "Depth" relates to the fact
 that features are learned along the channels, which is likely to be not optimal.
 """
 
-from torch import nn, device, Tensor, reshape, swapaxes
+from torch import nn, device, Tensor, reshape, swapaxes, flatten
 from ..tools.split import Split
 from ..tools.pooling import MinPool2d
 
@@ -26,6 +26,27 @@ class PrepDepthwiseBatchNorm1d(nn.Module):
             x = reshape(x, (x.shape[0], 256, 2816))
         return x
 
+
+
+class Reshape(nn.Module):
+    def __init__(self, shape, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.shape = shape
+    
+    def forward(self, x: Tensor) -> Tensor:
+        x = x.reshape(shape=(x.shape[0], *self.shape))
+        return x
+
+
+
+class Log(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+    
+
+    def forward(self, x):
+        print(x.shape)
+        return x
 
 
 
@@ -69,12 +90,17 @@ class ConvNextV2_DepthAE(nn.Module):
                 # depth-axis.
                 MinPool2d(kernel_size=(3,3), stride=(1,1), padding=0),
                 nn.AvgPool2d(kernel_size=(3,3), stride=(1,1), padding=0),
-                nn.MaxPool2d(kernel_size=(3,3), stride=(1,1), padding=0)
+                nn.MaxPool2d(kernel_size=(3,3), stride=(1,1), padding=0),
+                cat_dim=1
             ),
 
             # Here we learn 128 filters, each applied to a 352x1x1 slice. We will get
             # 128x11x11=15,488 features out of this.
             nn.Conv2d(in_channels=3*44, out_channels=132, kernel_size=(1,1), stride=1, bias=True, groups=3),
+
+            nn.Flatten(),
+            nn.Linear(in_features=132*11*11, out_features=1_100, bias=True),
+            nn.Dropout(p=1./3.),
 
 
             #####  BOTTLENECK HERE  #####
@@ -83,6 +109,10 @@ class ConvNextV2_DepthAE(nn.Module):
             # Once trained, we shall cut of the AE between this last convolution and the next activation!
 
             nn.SiLU(inplace=True),
+
+            nn.Linear(in_features=1_100, out_features=132*11*11, bias=True),
+            nn.SiLU(inplace=True),
+            Reshape(shape=(132, 11, 11)),
 
             ##### De-Convolution starts here  #####
 
@@ -97,11 +127,22 @@ class ConvNextV2_DepthAE(nn.Module):
             # # nn.LeakyReLU(inplace=True),
             # # Reshape(shape=(352,13,13)),
 
-            nn.ConvTranspose2d(in_channels=352, out_channels=1408, kernel_size=(2,2), stride=1),
+            nn.ConvTranspose2d(in_channels=352, out_channels=2816, kernel_size=(2,2), stride=1),
             nn.LeakyReLU(inplace=True),
+
             
-            nn.Linear(in_features=704, out_features=2816, bias=True),
-            nn.SiLU(inplace=True)
+            nn.Flatten(),
+            nn.Linear(in_features=2816*16*16, out_features=1_100, bias=True),
+            nn.SiLU(inplace=True),
+            nn.Dropout(p=1./3.),
+            nn.Linear(in_features=1_100, out_features=2816*16*16, bias=True),
+            Reshape(shape=(2816, 16, 16)),
+
+            # nn.ConvTranspose2d(in_channels=352, out_channels=1408, kernel_size=(2,2), stride=1),
+            # nn.LeakyReLU(inplace=True),
+            
+            # nn.Linear(in_features=704, out_features=2816, bias=True),
+            # nn.SiLU(inplace=True)
 
         ).to(device=dev)
     
