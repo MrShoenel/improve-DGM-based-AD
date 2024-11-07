@@ -8,17 +8,23 @@ class Split(nn.Module):
     During forward, each module's forward() is called. The results are than stacked
     horizontally or vertically (and, therefore, are  expected to be compatible).
     """
-    def __init__(self, stack: Literal['h', 'v'], *args: nn.Module, **kwargs) -> None:
+    def __init__(self, /, *args: nn.Module, cat_dim: int|None = None, stack: Literal['h', 'v'] = 'v') -> None:
         super().__init__()
 
         self.stack = stack
+        self.cat_dim = cat_dim
         self.modules: list[nn.Module] = list(args)
         if len(self.modules) == 0:
             raise Exception('Need at least one module.')
         
     def forward(self, x: Tensor) -> Tensor:
-        func = torch.hstack if self.stack == 'h' else torch.vstack
-        temp = func(list([m(x) for m in self.modules]))
+        temp = list([m(x) for m in self.modules])
+        if self.cat_dim is None:
+            func = torch.hstack if self.stack == 'h' else torch.vstack
+            temp = func(temp)
+        else:
+            temp = torch.cat(temp, dim=self.cat_dim)
+
         return temp
     
     def eval(self) -> Self:
