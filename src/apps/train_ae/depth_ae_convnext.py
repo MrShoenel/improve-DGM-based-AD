@@ -27,16 +27,19 @@ from src.data.dataset import GlobImageDataset
 
 
 
-def train_loop(loader: DataLoader, model: nn.Module, loss_fn: nn.Module, optimizer: Optimizer):
+def train_loop(loader: DataLoader, fe: nn.Module, model: nn.Module, loss_fn: nn.Module, optimizer: Optimizer) -> float:
     size = len(loader.dataset)
+    fe.eval()
     model.train()
 
+    loss_total = 0.0
     for idx_batch, sample_batched in enumerate(loader):
         # We're training a reconstructing AE, so X==Y
         X = sample_batched.to(dev)
+        X_feats = fe(X)
         
-        pred = model(X)
-        loss = loss_fn(pred, X)
+        pred = model(X_feats)
+        loss = loss_fn(pred, X_feats)
 
         loss.backward()
         optimizer.step()
@@ -44,6 +47,9 @@ def train_loop(loader: DataLoader, model: nn.Module, loss_fn: nn.Module, optimiz
 
         loss, current = loss.item(), idx_batch * batch_size + len(X)
         print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+        loss_total += loss
+    print(f'\nTotal loss:\t{loss_total:>7f}')
+    return loss_total
 
 
 def test_loop(loader: DataLoader, model: nn.Module, loss_fn: nn.Module):
@@ -63,48 +69,34 @@ def test_loop(loader: DataLoader, model: nn.Module, loss_fn: nn.Module):
 
 
 
-from torch import Tensor, device
-
-class TempModel(nn.Module):
-    def __init__(self, dev: device, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.model = nn.Sequential(
-            ConvNextV2(Path(__file__), dev=dev).eval(),
-            ConvNextV2_DepthAE(dev=dev).train()
-        )
-    
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.model(x)
-
-
 
 if __name__ == '__main__':
     manual_seed(0xbeef)
-    batch_size = 8
+    batch_size = 32
 
 
-    train_dataset = GlobImageDataset(folder=ROOT_DIR.joinpath('./src/test/anomalies/test_noise'), seed=1, shuffle=True)
+    train_dataset = GlobImageDataset(folder=ROOT_DIR.joinpath('/home/sehoaa/GLASS-repl_a/glink/ce_blanked/train/good'), seed=1, shuffle=True)
+    train_dataset.files = train_dataset.files#[0:80*batch_size]
     train_loader = DataLoader(dataset=train_dataset, shuffle=False, batch_size=batch_size)
 
 
     dev = 'cuda' if cuda.is_available() else 'cpu'
-    # model = ConvNextV2_DepthAE(dev=dev)
-    # fe = ConvNextV2(Path(__file__)).eval()
+    model = nn.DataParallel(ConvNextV2_DepthAE(dev=dev))
+    # model.load_state_dict(torch.load(f'./{ConvNextV2_DepthAE.__name__}.torch'))
+    fe = nn.DataParallel(ConvNextV2(Path(__file__))).eval()
     # summary(model=model, batch_size=8, input_size=(2816, 16, 16))
     
-    learning_rate = 5e-4
+    learning_rate = 5e-5
     # loss_fn = nn.MSELoss() # RMLSELoss()
     loss_fn = HuberLoss()
-    model = TempModel(dev=dev)
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, amsgrad=True)
-    early_stopper = EarlyStopper(patience=35, min_delta=1e-2)
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, amsgrad=False)
+    early_stopper = EarlyStopper(patience=30, min_delta=5e-3)
+    print(f'Model parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
     epochs = 20000
     for t in range(epochs):
         print(f"Epoch {t+1}\n-------------------------------")
-        train_loop(loader=train_loader, model=model, loss_fn=loss_fn, optimizer=optimizer)
-        # test_loss = test_loop(loader=test_loader, model=model, loss_fn=loss_fn)
-        # if early_stopper.early_stop(test_loss):
-        #     torch.save(obj=model.state_dict(), f=MODELS_FOLDER.joinpath(f'./{DepthAE.__name__}_ConvNeXt_V2.torch'))
-        #     break
+        loss = train_loop(loader=train_loader, fe=fe, model=model, loss_fn=loss_fn, optimizer=optimizer)
+        if early_stopper.early_stop(loss):
+            torch.save(obj=model.state_dict(), f=f'./{ConvNextV2_DepthAE.__name__}.torch')
+            break
